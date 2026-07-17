@@ -8,7 +8,7 @@ import { ChatInput } from "./chat-input";
 import { Message } from "./message";
 import { ModelSelect } from "./model-select";
 
-export function Chat() {
+export function Chat({ userSlot }: { userSlot?: React.ReactNode }) {
   const [models, setModels] = useState<ChatModel[]>([]);
   const [modelId, setModelId] = useState<string>("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -42,13 +42,16 @@ export function Chat() {
   return (
     <div className="mx-auto flex h-screen w-full max-w-3xl flex-col">
       <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-        <span className="font-semibold">Polaris</span>
-        <ModelSelect
-          models={models}
-          value={modelId}
-          onChange={setModelId}
-          disabled={isBusy}
-        />
+        <div className="flex items-center gap-3">
+          <span className="font-semibold">Polaris</span>
+          <ModelSelect
+            models={models}
+            value={modelId}
+            onChange={setModelId}
+            disabled={isBusy}
+          />
+        </div>
+        {userSlot}
       </header>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-6">

@@ -1,5 +1,6 @@
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
 import { resolveModel } from "@/lib/ai/providers";
+import { auth } from "@/lib/auth";
 
 export const maxDuration = 60;
 
@@ -9,6 +10,11 @@ type ChatRequest = {
 };
 
 export async function POST(req: Request) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+
   const { messages, modelId }: ChatRequest = await req.json();
 
   let model;
