@@ -8,6 +8,13 @@
       "when": 1784324833908,
       "tag": "0000_square_nemesis",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784325004424,
+      "tag": "0001_large_starfox",
+      "breakpoints": true
     }
   ]
 }
