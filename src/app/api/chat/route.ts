@@ -1,4 +1,9 @@
-import { convertToModelMessages, streamText, type UIMessage } from "ai";
+import {
+  convertToModelMessages,
+  stepCountIs,
+  streamText,
+  type UIMessage,
+} from "ai";
 import { resolveModel } from "@/lib/ai/providers";
 import { generateTitle } from "@/lib/ai/title";
 import { auth } from "@/lib/auth";
@@ -6,9 +11,16 @@ import { canAccessConversation } from "@/lib/db/access";
 import {
   getConversation,
   saveMessages,
+  saveReceipts,
   touchConversation,
   upsertConversation,
 } from "@/lib/db/queries";
+import { getMcpToolsForUser } from "@/lib/mcp/client";
+import {
+  buildInputReceipt,
+  buildProposalReceipt,
+  buildRetrievalReceipt,
+} from "@/lib/receipts/receipts";
 
 export const maxDuration = 60;
 
@@ -41,7 +53,6 @@ export async function POST(req: Request) {
     return Response.json({ error: "invalid_model" }, { status: 400 });
   }
 
-  // Ownership check: an existing conversation must belong to this user.
   const existing = await getConversation(conversationId);
   if (existing && !canAccessConversation(existing, userId)) {
     return Response.json({ error: "not_found" }, { status: 404 });
@@ -68,12 +79,52 @@ export async function POST(req: Request) {
     },
   ]);
 
+  // Receipt: record the input (hash only, no raw text).
+  const inputReceipt = buildInputReceipt({
+    conversationId,
+    messageId: lastUserMessage.id,
+    text: textOf(lastUserMessage),
+  });
+  await saveReceipts([{ ...inputReceipt, payload: inputReceipt.payload }]);
+
+  const mcp = await getMcpToolsForUser(userId);
+
+  // DEGRADE: connected but the server is unreachable — warn the model rather
+  // than letting it fabricate document-grounded answers.
+  const degradedNote =
+    mcp.degraded && mcp.connected
+      ? " Note: the document search tool is currently unavailable. " +
+        "Do not claim to have searched documents; tell the user document " +
+        "search is temporarily unavailable."
+      : "";
+
   const result = streamText({
     model,
     system:
       "You are Polaris, an internal assistant for company members. " +
-      "Answer clearly and concisely in the user's language.",
+      "Answer clearly and concisely in the user's language." +
+      degradedNote,
     messages: await convertToModelMessages(messages),
+    tools: mcp.tools,
+    stopWhen: stepCountIs(5),
+    onStepFinish: async ({ toolCalls, toolResults }) => {
+      if (toolCalls.length === 0) return;
+      const receipts = toolCalls.map((call) => {
+        const hasResult = toolResults.some(
+          (r) => r.toolCallId === call.toolCallId,
+        );
+        const rc = buildRetrievalReceipt({
+          conversationId,
+          messageId: lastUserMessage.id,
+          toolName: call.toolName,
+          args: call.input,
+          status: hasResult ? "succeeded" : "degraded",
+          resultRefs: [],
+        });
+        return { ...rc, payload: rc.payload };
+      });
+      await saveReceipts(receipts);
+    },
   });
 
   return result.toUIMessageStreamResponse({
@@ -88,6 +139,15 @@ export async function POST(req: Request) {
           modelId,
         },
       ]);
+      const proposal = buildProposalReceipt({
+        conversationId,
+        messageId: responseMessage.id,
+        modelId,
+        outputText: textOf(responseMessage),
+        inputReceiptIds: [inputReceipt.id],
+      });
+      await saveReceipts([{ ...proposal, payload: proposal.payload }]);
+      await mcp.close();
     },
   });
 }
