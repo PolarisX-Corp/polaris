@@ -1,20 +1,37 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import { DefaultChatTransport, type UIMessage } from "ai";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { ChatModel } from "@/lib/ai/providers";
 import { ChatInput } from "./chat-input";
 import { Message } from "./message";
 import { ModelSelect } from "./model-select";
 
-export function Chat({ userSlot }: { userSlot?: React.ReactNode }) {
+export function Chat({
+  conversationId,
+  initialMessages,
+  isNew,
+}: {
+  conversationId: string;
+  initialMessages?: UIMessage[];
+  isNew?: boolean;
+}) {
+  const router = useRouter();
   const [models, setModels] = useState<ChatModel[]>([]);
   const [modelId, setModelId] = useState<string>("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const urlUpdated = useRef(false);
 
   const { messages, sendMessage, status, error, clearError } = useChat({
+    id: conversationId,
+    messages: initialMessages,
     transport: new DefaultChatTransport({ api: "/api/chat" }),
+    onFinish: () => {
+      // Refresh the sidebar so a newly created conversation appears.
+      router.refresh();
+    },
   });
 
   useEffect(() => {
@@ -36,22 +53,34 @@ export function Chat({ userSlot }: { userSlot?: React.ReactNode }) {
   const handleSend = (text: string) => {
     if (!modelId) return;
     clearError();
-    void sendMessage({ text }, { body: { modelId } });
+    // On the first message of a new chat, reflect the conversation URL
+    // without a navigation so the component (and stream) stays mounted.
+    if (isNew && !urlUpdated.current) {
+      window.history.replaceState(null, "", `/chat/${conversationId}`);
+      urlUpdated.current = true;
+    }
+    void sendMessage({ text }, { body: { conversationId, modelId } });
+  };
+
+  const retry = () => {
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    const text = lastUser?.parts
+      .filter((p) => p.type === "text")
+      .map((p) => p.text)
+      .join("");
+    if (text) handleSend(text);
   };
 
   return (
     <div className="mx-auto flex h-screen w-full max-w-3xl flex-col">
       <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-        <div className="flex items-center gap-3">
-          <span className="font-semibold">Polaris</span>
-          <ModelSelect
-            models={models}
-            value={modelId}
-            onChange={setModelId}
-            disabled={isBusy}
-          />
-        </div>
-        {userSlot}
+        <span className="font-semibold">Polaris</span>
+        <ModelSelect
+          models={models}
+          value={modelId}
+          onChange={setModelId}
+          disabled={isBusy}
+        />
       </header>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-6">
@@ -68,16 +97,7 @@ export function Chat({ userSlot }: { userSlot?: React.ReactNode }) {
             <span>エラーが発生しました。もう一度お試しください。</span>
             <button
               type="button"
-              onClick={() => {
-                const lastUser = [...messages]
-                  .reverse()
-                  .find((m) => m.role === "user");
-                const text = lastUser?.parts
-                  .filter((p) => p.type === "text")
-                  .map((p) => p.text)
-                  .join("");
-                if (text) handleSend(text);
-              }}
+              onClick={retry}
               className="rounded-md bg-red-600 px-3 py-1 text-white"
             >
               再試行
