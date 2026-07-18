@@ -4,7 +4,10 @@ import { db } from "./index";
 import {
   conversations,
   messages,
+  receipts,
+  type Boundary,
   type MessageRole,
+  type ReceiptType,
 } from "./schema";
 
 export async function getConversation(id: string) {
@@ -81,4 +84,18 @@ export async function getMessages(conversationId: string) {
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
     .orderBy(asc(messages.createdAt));
+}
+
+export type NewReceipt = {
+  id: string;
+  conversationId: string;
+  messageId: string | null;
+  receiptType: ReceiptType;
+  boundary: Boundary;
+  payload: unknown;
+};
+
+export async function saveReceipts(rows: NewReceipt[]) {
+  if (rows.length === 0) return;
+  await db.insert(receipts).values(rows).onConflictDoNothing();
 }

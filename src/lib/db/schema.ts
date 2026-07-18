@@ -6,6 +6,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
 } from "drizzle-orm/pg-core";
 import type { UIMessage } from "ai";
 
@@ -81,3 +82,42 @@ export const messages = pgTable("message", {
   modelId: text("modelId"),
   createdAt: timestamp("createdAt", { mode: "date" }).notNull().defaultNow(),
 });
+
+export type ReceiptType = "input" | "retrieval" | "proposal";
+export type Boundary = "support-only" | "review-only" | "effect-bearing";
+
+export const receipts = pgTable("receipt", {
+  id: text("id").primaryKey(),
+  conversationId: text("conversationId")
+    .notNull()
+    .references(() => conversations.id, { onDelete: "cascade" }),
+  messageId: text("messageId"),
+  receiptType: text("receiptType").$type<ReceiptType>().notNull(),
+  boundary: text("boundary").$type<Boundary>().notNull(),
+  payload: jsonb("payload").notNull(),
+  createdAt: timestamp("createdAt", { mode: "date" }).notNull().defaultNow(),
+});
+
+export type McpConnectionStatus = "connected" | "pending" | "disconnected";
+
+export const mcpConnections = pgTable(
+  "mcp_connection",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    serverUrl: text("serverUrl").notNull(),
+    accessTokenEnc: text("accessTokenEnc"),
+    refreshTokenEnc: text("refreshTokenEnc"),
+    expiresAt: timestamp("expiresAt", { mode: "date" }),
+    clientInfo: jsonb("clientInfo"),
+    codeVerifier: text("codeVerifier"),
+    status: text("status").$type<McpConnectionStatus>().notNull().default("pending"),
+    createdAt: timestamp("createdAt", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updatedAt", { mode: "date" }).notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.userId, t.serverUrl)],
+);

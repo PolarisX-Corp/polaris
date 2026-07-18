@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { listConversations } from "@/lib/db/queries";
+import { mcpServerUrl } from "@/lib/mcp/config";
+import { getConnection } from "@/lib/mcp/connection";
 import { ConversationItem } from "./conversation-item";
 import { UserMenu } from "./user-menu";
 
@@ -8,6 +10,11 @@ export async function Sidebar() {
   const session = await auth();
   const userId = session?.user?.id;
   const conversations = userId ? await listConversations(userId) : [];
+  const serverUrl = mcpServerUrl();
+  const mcpConnected =
+    userId && serverUrl
+      ? (await getConnection(userId, serverUrl))?.status === "connected"
+      : false;
 
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950">
@@ -31,7 +38,22 @@ export async function Sidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-gray-200 p-3 dark:border-gray-800">
+      <div className="space-y-2 border-t border-gray-200 p-3 dark:border-gray-800">
+        <Link
+          href="/settings"
+          className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800/50"
+        >
+          <span>設定</span>
+          <span
+            className={
+              "text-xs " +
+              (mcpConnected ? "text-green-600" : "text-gray-400")
+            }
+            title="ドキュメント接続状態"
+          >
+            ● {mcpConnected ? "接続済み" : "未接続"}
+          </span>
+        </Link>
         <UserMenu />
       </div>
     </aside>
