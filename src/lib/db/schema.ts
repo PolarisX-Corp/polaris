@@ -1,11 +1,13 @@
 import type { AdapterAccountType } from "next-auth/adapters";
 import {
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
+import type { UIMessage } from "ai";
 
 export const users = pgTable("user", {
   id: text("id")
@@ -56,3 +58,26 @@ export const verificationTokens = pgTable(
   },
   (vt) => [primaryKey({ columns: [vt.identifier, vt.token] })],
 );
+
+export const conversations = pgTable("conversation", {
+  id: text("id").primaryKey(),
+  userId: text("userId")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull().default("新しいチャット"),
+  createdAt: timestamp("createdAt", { mode: "date" }).notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt", { mode: "date" }).notNull().defaultNow(),
+});
+
+export type MessageRole = "user" | "assistant" | "system";
+
+export const messages = pgTable("message", {
+  id: text("id").primaryKey(),
+  conversationId: text("conversationId")
+    .notNull()
+    .references(() => conversations.id, { onDelete: "cascade" }),
+  role: text("role").$type<MessageRole>().notNull(),
+  parts: jsonb("parts").$type<UIMessage["parts"]>().notNull(),
+  modelId: text("modelId"),
+  createdAt: timestamp("createdAt", { mode: "date" }).notNull().defaultNow(),
+});
