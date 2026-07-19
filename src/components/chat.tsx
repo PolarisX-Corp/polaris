@@ -5,6 +5,7 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { ChatModel } from "@/lib/ai/providers";
+import { ActivityPanel } from "./activity-panel";
 import { ChatInput } from "./chat-input";
 import { Message } from "./message";
 import { ModelSelect } from "./model-select";
@@ -23,6 +24,8 @@ export function Chat({
   const [modelId, setModelId] = useState<string>("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const urlUpdated = useRef(false);
+  const [showActivity, setShowActivity] = useState(false);
+  const [activityKey, setActivityKey] = useState(0);
 
   const { messages, sendMessage, status, error, clearError } = useChat({
     id: conversationId,
@@ -31,6 +34,8 @@ export function Chat({
     onFinish: () => {
       // Refresh the sidebar so a newly created conversation appears.
       router.refresh();
+      // Refetch the activity panel so new receipts show up.
+      setActivityKey((k) => k + 1);
     },
   });
 
@@ -75,12 +80,21 @@ export function Chat({
     <div className="mx-auto flex h-screen w-full max-w-3xl flex-col">
       <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
         <span className="font-semibold">Polaris</span>
-        <ModelSelect
-          models={models}
-          value={modelId}
-          onChange={setModelId}
-          disabled={isBusy}
-        />
+        <div className="flex items-center gap-2">
+          <ModelSelect
+            models={models}
+            value={modelId}
+            onChange={setModelId}
+            disabled={isBusy}
+          />
+          <button
+            type="button"
+            onClick={() => setShowActivity((v) => !v)}
+            className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            監査ログ
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-6">
@@ -115,6 +129,13 @@ export function Chat({
       <div className="border-t border-gray-200 px-4 py-3 dark:border-gray-800">
         <ChatInput onSend={handleSend} disabled={isBusy || !modelId} />
       </div>
+
+      <ActivityPanel
+        conversationId={conversationId}
+        open={showActivity}
+        refreshKey={activityKey}
+        onClose={() => setShowActivity(false)}
+      />
     </div>
   );
 }
