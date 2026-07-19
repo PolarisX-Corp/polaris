@@ -16,8 +16,10 @@ import {
   upsertConversation,
 } from "@/lib/db/queries";
 import { getMcpToolsForUser } from "@/lib/mcp/client";
+import { guardTools } from "@/lib/parse-guard/guard-tools";
 import {
   buildInputReceipt,
+  buildParseGuardReceipt,
   buildProposalReceipt,
   buildRetrievalReceipt,
 } from "@/lib/receipts/receipts";
@@ -101,6 +103,22 @@ export async function POST(req: Request) {
 
     const mcp = await getMcpToolsForUser(userId);
 
+    // Parse Guard: wrap the search tools so an empty retrieval result is
+    // replaced with a warning (the model must not fabricate) and recorded.
+    const guardedTools = guardTools(mcp.tools, {
+      onRecord: (r) => {
+        const rc = buildParseGuardReceipt({
+          conversationId,
+          messageId: lastUserMessage.id,
+          toolName: r.toolName,
+          args: r.args,
+          observationStatus: r.status,
+          action: r.action,
+        });
+        void safeSaveReceipts([{ ...rc, payload: rc.payload }]);
+      },
+    });
+
     // DEGRADE: connected but the server is unreachable — warn the model rather
     // than letting it fabricate document-grounded answers.
     const degradedNote =
@@ -114,10 +132,13 @@ export async function POST(req: Request) {
       model,
       system:
         "You are Polaris, an internal assistant for company members. " +
-        "Answer clearly and concisely in the user's language." +
+        "Answer clearly and concisely in the user's language. " +
+        "When a document search returns no relevant results, tell the user the " +
+        "information was not found in the documents. Never fabricate " +
+        "document-grounded claims." +
         degradedNote,
       messages: await convertToModelMessages(messages),
-      tools: mcp.tools,
+      tools: guardedTools,
       stopWhen: stepCountIs(5),
       onError: (event) => {
         // Streaming-phase failures (model/provider/tool errors) land here.
