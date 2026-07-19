@@ -29,8 +29,18 @@ export function Chat({
     messages: initialMessages,
     transport: new DefaultChatTransport({ api: "/api/chat" }),
     onFinish: () => {
-      // Refresh the sidebar so a newly created conversation appears.
-      router.refresh();
+      // Refresh the sidebar so a message send is reflected (ordering, etc.).
+      //
+      // Skip this for a brand-new chat. Its URL was swapped to /chat/<id> via
+      // history.replaceState (no Next navigation), so a refresh reconciles the
+      // route from "/" (NewChatPage) to /chat/[id] (ConversationPage). That
+      // remounts <Chat> and re-seeds useChat from getMessages() — which does
+      // not yet contain the just-streamed assistant reply (it is persisted
+      // asynchronously in the route's onFinish). The reply would vanish from
+      // the view and, because the remount tears down the stream, never finish
+      // persisting. The new conversation still appears in the sidebar on the
+      // next navigation or reload.
+      if (!isNew) router.refresh();
     },
   });
 
