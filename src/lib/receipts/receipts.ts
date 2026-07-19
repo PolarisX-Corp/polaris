@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
-export type ReceiptType = "input" | "retrieval" | "proposal";
+export type ReceiptType = "input" | "retrieval" | "proposal" | "parse_guard";
 export type Boundary = "support-only" | "review-only" | "effect-bearing";
 export type RetrievalStatus = "succeeded" | "empty" | "degraded";
 
@@ -20,6 +20,12 @@ export type ProposalPayload = {
   outputHash: string;
   inputReceiptRefs: string[];
 };
+export type ParseGuardPayload = {
+  observationStatus: "sufficient" | "empty";
+  toolName: string;
+  argsHash: string;
+  action: "allow" | "annotate";
+};
 
 type BaseReceipt<T extends ReceiptType, P> = {
   id: string;
@@ -33,7 +39,12 @@ type BaseReceipt<T extends ReceiptType, P> = {
 export type InputReceipt = BaseReceipt<"input", InputPayload>;
 export type RetrievalReceipt = BaseReceipt<"retrieval", RetrievalPayload>;
 export type ProposalReceipt = BaseReceipt<"proposal", ProposalPayload>;
-export type AnyReceipt = InputReceipt | RetrievalReceipt | ProposalReceipt;
+export type ParseGuardReceipt = BaseReceipt<"parse_guard", ParseGuardPayload>;
+export type AnyReceipt =
+  | InputReceipt
+  | RetrievalReceipt
+  | ProposalReceipt
+  | ParseGuardReceipt;
 
 export function buildInputReceipt(params: {
   conversationId: string;
@@ -90,6 +101,29 @@ export function buildProposalReceipt(params: {
       modelId: params.modelId,
       outputHash: sha256(params.outputText),
       inputReceiptRefs: params.inputReceiptIds,
+    },
+  };
+}
+
+export function buildParseGuardReceipt(params: {
+  conversationId: string;
+  messageId?: string | null;
+  toolName: string;
+  args: unknown;
+  observationStatus: "sufficient" | "empty";
+  action: "allow" | "annotate";
+}): ParseGuardReceipt {
+  return {
+    id: randomUUID(),
+    receiptType: "parse_guard",
+    boundary: "support-only",
+    conversationId: params.conversationId,
+    messageId: params.messageId ?? null,
+    payload: {
+      observationStatus: params.observationStatus,
+      toolName: params.toolName,
+      argsHash: sha256(JSON.stringify(params.args ?? null)),
+      action: params.action,
     },
   };
 }
