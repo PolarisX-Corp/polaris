@@ -95,6 +95,11 @@ export function Chat({
         {error && (
           <div className="flex flex-col items-start gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
             <span>エラーが発生しました。もう一度お試しください。</span>
+            {error.message && (
+              <span className="font-mono text-xs opacity-80">
+                {error.message}
+              </span>
+            )}
             <button
               type="button"
               onClick={retry}
