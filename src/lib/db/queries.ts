@@ -99,3 +99,11 @@ export async function saveReceipts(rows: NewReceipt[]) {
   if (rows.length === 0) return;
   await db.insert(receipts).values(rows).onConflictDoNothing();
 }
+
+export async function getReceipts(conversationId: string) {
+  return db
+    .select()
+    .from(receipts)
+    .where(eq(receipts.conversationId, conversationId))
+    .orderBy(asc(receipts.createdAt));
+}
