@@ -24,6 +24,9 @@ export function ChatInput({
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
+          // isComposing / keyCode 229 guards against sending while confirming
+          // an IME composition (e.g. Japanese 変換確定) with Enter.
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return;
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             submit();
