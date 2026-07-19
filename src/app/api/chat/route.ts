@@ -143,6 +143,15 @@ export async function POST(req: Request) {
       },
     });
 
+    // Drive the stream to completion on the server regardless of the client.
+    // The assistant reply is persisted in onFinish, which only runs once the
+    // stream finishes. Without this, a reload or navigation during streaming
+    // (or serverless suspension after the client disconnects) leaves onFinish
+    // uncalled and the reply unsaved — while the user message, saved before
+    // streaming, survives. consumeStream removes the client backpressure so the
+    // generation completes and onFinish always fires.
+    void result.consumeStream();
+
     return result.toUIMessageStreamResponse({
       originalMessages: messages,
       // Surface the real reason to the client instead of the default
