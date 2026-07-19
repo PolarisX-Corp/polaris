@@ -32,12 +32,8 @@ export const MODEL_CATALOG: ChatModel[] = [
     provider: "openai",
     providerModelId: "gpt-5",
   },
-  {
-    id: "google:gemini-2.5-pro",
-    label: "Gemini 2.5 Pro",
-    provider: "google",
-    providerModelId: "gemini-2.5-pro",
-  },
+  // Gemini 2.5 Pro is intentionally omitted: it is not available on the
+  // Google API free tier (free-tier request quota is 0), so it 429s.
   {
     id: "google:gemini-2.5-flash",
     label: "Gemini 2.5 Flash",
