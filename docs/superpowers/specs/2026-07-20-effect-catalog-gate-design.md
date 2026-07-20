@@ -77,8 +77,10 @@ export const CATALOG_VERSION = "2026-07-20";
 | effectType | reversibility | autoExecuteAllowed | requiredReceipts | requiredReviewerRoles | requiredPlans |
 |---|---|---|---|---|---|
 | `add_internal_label` | reversible | true | input, proposal | (なし) | rollback_plan |
-| `send_customer_email` | compensatable | false | input, proposal, review | support_lead | compensation_plan |
-| `issue_refund` | irreversible | false | input, proposal, review | finance_lead | (なし) |
+| `send_customer_email` | compensatable | false | input, proposal | support_lead | compensation_plan |
+| `issue_refund` | irreversible | false | input, proposal | finance_lead | (なし) |
+
+review 要件は `requiredReceipts` に "review" を入れず、`requiredReviewerRoles` と `autoExecuteAllowed=false`(＝人手承認必須)＋ `context.review` で一本化して表現する(二重表現を避ける)。`ReceiptRequirement` 型は将来用に "review" を含むが、例エントリでは使わない。
 
 全エントリの `policyVersion` は `CATALOG_VERSION`。
 
