@@ -67,4 +67,24 @@ describe("receiptsToActivity", () => {
       "r1",
     );
   });
+
+  it("summarizes a parse_guard receipt with tool and status", () => {
+    const [r] = receiptsToActivity([
+      {
+        ...base,
+        id: "r4",
+        receiptType: "parse_guard",
+        payload: {
+          observationStatus: "empty",
+          toolName: "search_docs",
+          argsHash: "sha256:xyz",
+          action: "annotate",
+        },
+      },
+    ]);
+    expect(r.kind).toBe("parse_guard");
+    expect(r.summary).toContain("search_docs");
+    expect(r.summary).toContain("empty");
+    expect(r.details.find((d) => d.label === "action")?.value).toBe("annotate");
+  });
 });

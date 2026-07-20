@@ -4,7 +4,7 @@ export type ReceiptRow = {
   id: string;
   conversationId: string;
   messageId: string | null;
-  receiptType: "input" | "retrieval" | "proposal";
+  receiptType: "input" | "retrieval" | "proposal" | "parse_guard";
   boundary: string;
   payload: unknown;
   createdAt: Date;
@@ -55,6 +55,17 @@ export function receiptToActivity(row: ReceiptRow): ActivityRecord {
           { label: "modelId", value: str(p.modelId) },
           { label: "outputHash", value: str(p.outputHash) },
           { label: "inputReceiptRefs", value: refs(p.inputReceiptRefs) },
+        ],
+      };
+    case "parse_guard":
+      return {
+        ...base,
+        summary: `検索充足チェック: ${str(p.toolName)} (${str(p.observationStatus)})`,
+        details: [
+          { label: "observationStatus", value: str(p.observationStatus) },
+          { label: "action", value: str(p.action) },
+          { label: "toolName", value: str(p.toolName) },
+          { label: "argsHash", value: str(p.argsHash) },
         ],
       };
   }

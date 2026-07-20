@@ -83,7 +83,7 @@ export const messages = pgTable("message", {
   createdAt: timestamp("createdAt", { mode: "date" }).notNull().defaultNow(),
 });
 
-export type ReceiptType = "input" | "retrieval" | "proposal";
+export type ReceiptType = "input" | "retrieval" | "proposal" | "parse_guard";
 export type Boundary = "support-only" | "review-only" | "effect-bearing";
 
 export const receipts = pgTable("receipt", {
