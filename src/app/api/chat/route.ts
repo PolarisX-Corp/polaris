@@ -1,4 +1,5 @@
 import {
+  consumeStream,
   convertToModelMessages,
   stepCountIs,
   streamText,
@@ -164,17 +165,23 @@ export async function POST(req: Request) {
       },
     });
 
-    // Drive the stream to completion on the server regardless of the client.
-    // The assistant reply is persisted in onFinish, which only runs once the
-    // stream finishes. Without this, a reload or navigation during streaming
-    // (or serverless suspension after the client disconnects) leaves onFinish
-    // uncalled and the reply unsaved — while the user message, saved before
-    // streaming, survives. consumeStream removes the client backpressure so the
-    // generation completes and onFinish always fires.
-    void result.consumeStream();
-
     return result.toUIMessageStreamResponse({
       originalMessages: messages,
+      // Drive the response stream to completion on the server regardless of the
+      // client. The assistant reply is persisted in onFinish, which only fires
+      // once the UI-message stream — the one this onFinish is attached to —
+      // finishes being read. Without this, a reload or navigation during
+      // streaming (or serverless suspension after the client disconnects) leaves
+      // onFinish uncalled and the reply unsaved, while the user message (saved
+      // before streaming) survives.
+      //
+      // NOTE: result.consumeStream() does NOT achieve this — it drains a
+      // separate tee of the raw model stream taken *before* the onFinish
+      // transform, so it completes the generation but never triggers onFinish.
+      // consumeSseStream tees the final response stream (which carries the
+      // onFinish transform) and drains that branch server-side, so onFinish
+      // always fires even when the client never reads the response.
+      consumeSseStream: consumeStream,
       // Surface the real reason to the client instead of the default
       // masked "An error occurred." so failures are diagnosable.
       onError: (error) => {

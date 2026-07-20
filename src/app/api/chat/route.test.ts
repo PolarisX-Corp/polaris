@@ -1,55 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MockLanguageModelV4, simulateReadableStream } from "ai/test";
 
 // The chat route persists the user message *before* streaming and the assistant
-// reply *after*, inside the stream's onFinish. If the server does not drain the
-// stream to completion independently of the client, a reload/navigation during
-// streaming (or serverless suspension after the client disconnects) drops the
-// assistant reply — while the user message survives. These tests pin the two
-// guarantees that prevent that: the server forces the stream to finish, and the
-// assistant reply is persisted when it does.
+// reply *after*, inside the response stream's onFinish. onFinish only fires once
+// that stream is drained. If the server does not drain it independently of the
+// client, a reload/navigation during streaming (or serverless suspension after
+// the client disconnects) leaves onFinish uncalled and the assistant reply
+// unsaved — while the user message survives. That is the exact "the AI's
+// replies vanish from history" bug.
+//
+// These tests run the REAL ai streaming pipeline (only the language model is a
+// mock) so they exercise the actual onFinish plumbing, and assert the assistant
+// reply is persisted in BOTH cases: when the client reads the whole response and
+// — critically — when the client never reads it at all.
 
-// vi.mock factories are hoisted above these declarations, so the shared spies
-// must live in a hoisted block to be referenceable inside them.
-type OnFinish = (event: {
-  responseMessage: { id: string; parts: unknown[] };
-  isAborted: boolean;
-}) => Promise<void> | void;
-
-const h = vi.hoisted(() => {
-  // Captured from toUIMessageStreamResponse so the test can drive onFinish the
-  // way the SDK would once the stream completes on the server.
-  const state: { capturedOnFinish?: OnFinish } = {};
-  const saveMessages =
+// Hoisted so the spy is referenceable inside the (also hoisted) vi.mock factory.
+const { saveMessages } = vi.hoisted(() => ({
+  saveMessages:
     vi.fn<(rows: Array<{ role: string; id: string }>) => Promise<void>>(
       async () => {},
-    );
-  const consumeStream = vi.fn(() => Promise.resolve());
-  const toUIMessageStreamResponse = vi.fn((opts: { onFinish?: OnFinish }) => {
-    state.capturedOnFinish = opts.onFinish;
-    return new Response("ok");
-  });
-  return { state, saveMessages, consumeStream, toUIMessageStreamResponse };
-});
-
-const { saveMessages, consumeStream, toUIMessageStreamResponse } = h;
-
-vi.mock("ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("ai")>();
-  return {
-    ...actual,
-    streamText: vi.fn(() => ({
-      consumeStream: h.consumeStream,
-      toUIMessageStreamResponse: h.toUIMessageStreamResponse,
-    })),
-  };
-});
+    ),
+}));
 
 vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: "user-1" } })),
-}));
-
-vi.mock("@/lib/ai/providers", () => ({
-  resolveModel: vi.fn(() => ({})),
 }));
 
 vi.mock("@/lib/ai/title", () => ({
@@ -62,7 +36,7 @@ vi.mock("@/lib/db/access", () => ({
 
 vi.mock("@/lib/db/queries", () => ({
   getConversation: vi.fn(async () => null),
-  saveMessages: h.saveMessages,
+  saveMessages,
   saveReceipts: vi.fn(async () => {}),
   touchConversation: vi.fn(async () => {}),
   upsertConversation: vi.fn(async () => {}),
@@ -75,6 +49,39 @@ vi.mock("@/lib/mcp/client", () => ({
     connected: false,
     close: async () => {},
   })),
+}));
+
+// A model that streams a short reply, then finishes. The real ai pipeline turns
+// this into a UI-message stream whose onFinish is what the route relies on.
+//
+// The chunk union is cast to the mock's expected doStream type: the exact
+// LanguageModelV4 stream-part/usage shape shifts between SDK patch versions and
+// is not worth pinning by hand in a test that only needs a text reply.
+type DoStream = NonNullable<
+  ConstructorParameters<typeof MockLanguageModelV4>[0]
+>["doStream"];
+
+vi.mock("@/lib/ai/providers", () => ({
+  resolveModel: vi.fn(
+    () =>
+      new MockLanguageModelV4({
+        doStream: (async () => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "t1" },
+              { type: "text-delta", id: "t1", delta: "Hello " },
+              { type: "text-delta", id: "t1", delta: "world" },
+              { type: "text-end", id: "t1" },
+              {
+                type: "finish",
+                finishReason: "stop",
+                usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+              },
+            ],
+          }),
+        })) as unknown as DoStream,
+      }),
+  ),
 }));
 
 import { POST } from "./route";
@@ -92,37 +99,38 @@ function chatRequest() {
   });
 }
 
+function savedAssistant() {
+  return saveMessages.mock.calls
+    .flatMap((call) => call[0])
+    .find((row) => row.role === "assistant");
+}
+
+async function waitForAssistantSave(timeoutMs = 2000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (savedAssistant()) return;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
 describe("POST /api/chat persistence", () => {
   beforeEach(() => {
     saveMessages.mockClear();
-    consumeStream.mockClear();
-    toUIMessageStreamResponse.mockClear();
-    h.state.capturedOnFinish = undefined;
   });
 
-  it("drains the stream on the server so onFinish runs even if the client disconnects", async () => {
-    await POST(chatRequest());
-
-    // Without this, the stream only advances while the client is reading it;
-    // a reload mid-stream leaves the assistant reply unsaved.
-    expect(consumeStream).toHaveBeenCalled();
+  it("persists the assistant reply when the client reads the whole stream", async () => {
+    const res = await POST(chatRequest());
+    // A connected client fully drains the response body.
+    await res.text();
+    await waitForAssistantSave();
+    expect(savedAssistant()).toBeDefined();
   });
 
-  it("persists the assistant reply when the stream finishes", async () => {
+  it("persists the assistant reply even if the client never reads the stream", async () => {
+    // Simulate a reload/navigation mid-stream: the response body is never read.
+    // The server must still drain it so onFinish runs and the reply is saved.
     await POST(chatRequest());
-    expect(h.state.capturedOnFinish).toBeDefined();
-
-    await h.state.capturedOnFinish!({
-      responseMessage: {
-        id: "a1",
-        parts: [{ type: "text", text: "hello" }],
-      },
-      isAborted: false,
-    });
-
-    const savedAssistant = saveMessages.mock.calls
-      .flatMap((call) => call[0])
-      .find((row) => row.role === "assistant");
-    expect(savedAssistant?.id).toBe("a1");
+    await waitForAssistantSave();
+    expect(savedAssistant()).toBeDefined();
   });
 });
